@@ -1,16 +1,15 @@
 # itau-parser
 
+[![CI](https://github.com/gmega/parser-fatura-itau/actions/workflows/ci.yml/badge.svg)](https://github.com/gmega/parser-fatura-itau/actions/workflows/ci.yml)
+
 Deterministic parsers for Itaú statements. Reads a PDF credit-card
 fatura and/or an OFX bank extrato, emits a unified CSV ready to load
 into pandas / DuckDB / SQLite for expense analysis.
 
 ## Setup
 
-Uses the `extrator` conda env (created out of band):
-
 ```sh
-conda activate extrator
-pip install pdfplumber pytest
+pip install -r requirements.txt
 ```
 
 ## Usage
