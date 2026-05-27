@@ -34,4 +34,6 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests
-        run: pytest tests/ -v
+        # -q + --tb=no = pass/fail summary only, no fixture content
+        # leaks into the public CI log even when tests fail.
+        run: pytest tests/ -q --tb=no
