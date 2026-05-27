@@ -40,6 +40,7 @@ _INTL_CONV_RE = re.compile(rf"^(.+?)\s+({_MONEY})\s+(USD|BRL|EUR)\s+({_MONEY})$"
 _CARD_HEADER_RE = re.compile(r"\(final (\d{4})\)")
 _NATIONAL_SUBTOTAL_RE = re.compile(r"^Lançamentos no cartão \(final (\d{4})\)")
 _DOLAR_CONV_RE = re.compile(r"^Dólar de Conversão")
+_EMISSION_RE = re.compile(r"Emissão:\s*(\d{2})/(\d{2})/(\d{4})")
 
 # Section markers we use to switch state or stop.
 _NATIONAL_SECTION = "Lançamentos: compras e saques"
@@ -69,7 +70,29 @@ class Transaction:
 
 def extract_transactions(pdf_path: str | Path) -> list[Transaction]:
     lines = _extract_lines(Path(pdf_path))
-    return list(_parse(lines))
+    emission_year, emission_month = _find_emission(lines)
+    return list(_parse(lines, emission_year, emission_month))
+
+
+def _find_emission(lines: list[str]) -> tuple[int, int]:
+    """The 'Emissão: DD/MM/YYYY' line on page 1 anchors which year each
+    DD/MM transaction date belongs to."""
+    for line in lines:
+        m = _EMISSION_RE.search(line)
+        if m:
+            return int(m.group(3)), int(m.group(2))
+    raise ValueError("Could not find 'Emissão:' date on the statement.")
+
+
+def _resolve_year(day_month: str, emission_year: int, emission_month: int) -> str:
+    """Turn 'DD/MM' into 'YYYY-MM-DD'. If the transaction month is after
+    the emission month, it belongs to the previous calendar year (this
+    bill arrived in February but bills can include charges from the
+    prior November)."""
+    day, month = day_month.split("/")
+    month_n = int(month)
+    year = emission_year if month_n <= emission_month else emission_year - 1
+    return f"{year}-{month}-{day}"
 
 
 def to_csv(transactions: Iterable[Transaction], out_path: str | Path) -> None:
@@ -116,7 +139,7 @@ def _words_to_lines(words: list[dict]) -> list[str]:
     ]
 
 
-def _parse(lines: list[str]) -> Iterator[Transaction]:
+def _parse(lines: list[str], emission_year: int, emission_month: int) -> Iterator[Transaction]:
     """State machine over the reconstructed line stream."""
     section: str | None = None  # "national" | "international" | None
     current_card: str | None = None
@@ -139,29 +162,25 @@ def _parse(lines: list[str]) -> Iterator[Transaction]:
             i += 1
             continue
 
-        # Card header — only changes the current card, doesn't itself
-        # produce a transaction.
         m = _CARD_HEADER_RE.search(line)
         if m and not _NATIONAL_SUBTOTAL_RE.match(line):
             current_card = m.group(1)
             i += 1
             continue
 
-        # Subtotal line "Lançamentos no cartão (final XXXX) <value>" —
-        # end of that card's national block.
         if _NATIONAL_SUBTOTAL_RE.match(line):
             i += 1
             continue
 
         if section == "national" and current_card is not None:
-            txn = _try_parse_national(lines, i, current_card)
+            txn = _try_parse_national(lines, i, current_card, emission_year, emission_month)
             if txn is not None:
                 yield txn
                 i += 2
                 continue
 
         if section == "international" and current_card is not None:
-            txn = _try_parse_international(lines, i, current_card)
+            txn = _try_parse_international(lines, i, current_card, emission_year, emission_month)
             if txn is not None:
                 yield txn
                 i += 3
@@ -170,31 +189,33 @@ def _parse(lines: list[str]) -> Iterator[Transaction]:
         i += 1
 
 
-def _try_parse_national(lines: list[str], i: int, card: str) -> Transaction | None:
+def _try_parse_national(
+    lines: list[str], i: int, card: str, emission_year: int, emission_month: int,
+) -> Transaction | None:
     if i + 1 >= len(lines):
         return None
     m = _NATIONAL_LINE_RE.match(lines[i].strip())
     if not m:
         return None
-    data, descricao, valor = m.group(1), m.group(2).strip(), _clean_money(m.group(3))
+    raw_date, descricao, raw_valor = m.group(1), m.group(2).strip(), m.group(3)
     categoria = lines[i + 1].strip()
-    # The category line must not itself look like a transaction header
-    # or another section marker — guard against parsing misalignment.
     if _NATIONAL_LINE_RE.match(categoria) or any(
         marker in categoria for marker in _STOP_MARKERS
     ):
         return None
     return Transaction(
         cartao=card,
-        data=data,
+        data=_resolve_year(raw_date, emission_year, emission_month),
         descricao=descricao,
         categoria=categoria,
-        valor=valor,
+        valor=_to_iso_numeric(raw_valor, flip_sign=True),
         moeda="BRL",
     )
 
 
-def _try_parse_international(lines: list[str], i: int, card: str) -> Transaction | None:
+def _try_parse_international(
+    lines: list[str], i: int, card: str, emission_year: int, emission_month: int,
+) -> Transaction | None:
     if i + 2 >= len(lines):
         return None
     m1 = _INTERNATIONAL_LINE_RE.match(lines[i].strip())
@@ -205,22 +226,34 @@ def _try_parse_international(lines: list[str], i: int, card: str) -> Transaction
         return None
     if not _DOLAR_CONV_RE.match(lines[i + 2].strip()):
         return None
-    data = m1.group(1)
+    raw_date = m1.group(1)
     descricao = m1.group(2).strip()
     domain = m2.group(1).strip()
-    usd_value = _clean_money(m2.group(4))
+    raw_usd = m2.group(4)
     return Transaction(
         cartao=card,
-        data=data,
+        data=_resolve_year(raw_date, emission_year, emission_month),
         descricao=descricao,
         categoria=domain,
-        valor=usd_value,
+        valor=_to_iso_numeric(raw_usd, flip_sign=True),
         moeda="USD",
     )
 
 
-def _clean_money(s: str) -> str:
-    return re.sub(r"\s+", "", s)
+def _to_iso_numeric(brazilian: str, *, flip_sign: bool = False) -> str:
+    """Convert '1.539,00' or '- 773,00' to canonical decimal-point form.
+
+    flip_sign=True turns a credit-card "amount owed" (positive on the
+    bill) into an outflow (negative on the analysis CSV). Refunds, which
+    arrive negative on the bill, flip to positive."""
+    s = re.sub(r"\s+", "", brazilian)
+    negative = s.startswith("-")
+    if negative:
+        s = s[1:]
+    s = s.replace(".", "").replace(",", ".")
+    if flip_sign:
+        negative = not negative
+    return f"-{s}" if negative else s
 
 
 def _main() -> None:

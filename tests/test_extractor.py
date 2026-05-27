@@ -15,8 +15,6 @@ def transactions():
 
 
 def _brl_to_decimal(s: str) -> Decimal:
-    # Negative values are rendered as "- 773,00" with a space; normalize.
-    s = s.replace(" ", "").replace(".", "").replace(",", ".")
     return Decimal(s)
 
 
@@ -30,77 +28,78 @@ def find(transactions, *, cartao, data, descricao):
 
 
 def test_first_three_transactions_card_9690(transactions):
-    t1 = find(transactions, cartao="9690", data="14/11", descricao="HS PLAZA SUL 03/05")
+    """Expenses on a credit card statement come out negative (cash leaving
+    the holder's pocket); refunds come out positive."""
+    t1 = find(transactions, cartao="9690", data="2025-11-14", descricao="HS PLAZA SUL 03/05")
     assert t1.categoria == "VESTUÁRIO .SAO PAULO"
-    assert t1.valor == "119,95"
+    assert t1.valor == "-119.95"
     assert t1.moeda == "BRL"
 
-    t2 = find(transactions, cartao="9690", data="15/01", descricao="SAN MARINO PANIFICACA")
+    t2 = find(transactions, cartao="9690", data="2026-01-15", descricao="SAN MARINO PANIFICACA")
     assert t2.categoria == "ALIMENTAÇÃO .SAO PAULO"
-    assert t2.valor == "8,50"
+    assert t2.valor == "-8.50"
     assert t2.moeda == "BRL"
 
-    t3 = find(transactions, cartao="9690", data="15/01", descricao="DELICIAS DO MOINHO")
+    t3 = find(transactions, cartao="9690", data="2026-01-15", descricao="DELICIAS DO MOINHO")
     assert t3.categoria == "ALIMENTAÇÃO .SAO PAULO"
-    assert t3.valor == "8,20"
+    assert t3.valor == "-8.20"
     assert t3.moeda == "BRL"
 
 
 def test_national_subtotal_card_9690(transactions):
-    """The PDF reports 'Lançamentos no cartão (final 9690) 5.729,70'."""
+    """PDF subtotal is R$ 5.729,70 of charges; with normalized signs
+    (expenses negative, refunds positive) the absolute sum matches."""
     total = sum(
         _brl_to_decimal(t.valor)
         for t in transactions
         if t.cartao == "9690" and t.moeda == "BRL"
     )
-    assert total == Decimal("5729.70")
+    assert total == Decimal("-5729.70")
 
 
 def test_national_subtotal_card_1017(transactions):
-    """The PDF reports 'Lançamentos no cartão (final 1017) 10.372,37'."""
     total = sum(
         _brl_to_decimal(t.valor)
         for t in transactions
         if t.cartao == "1017" and t.moeda == "BRL"
     )
-    assert total == Decimal("10372.37")
+    assert total == Decimal("-10372.37")
 
 
 def test_card_1017_first_transaction(transactions):
-    t = find(transactions, cartao="1017", data="13/01", descricao="LATAM AIR*IKYTLO")
-    assert t.valor == "5.790,02"
+    t = find(transactions, cartao="1017", data="2026-01-13", descricao="LATAM AIR*IKYTLO")
+    assert t.valor == "-5790.02"
     assert t.moeda == "BRL"
 
 
 def test_negative_value_handled(transactions):
-    """One AMAZON BR line is negative (refund) — must be preserved."""
+    """AMAZON BR has a charge and a matching refund. With sign-normalized
+    output the two cancel."""
     matches = [
         t for t in transactions
-        if t.cartao == "1017" and t.data == "14/01" and t.descricao == "AMAZON BR"
+        if t.cartao == "1017" and t.data == "2026-01-14" and t.descricao == "AMAZON BR"
     ]
     assert len(matches) == 2
     values = sorted(t.valor for t in matches)
-    assert values == ["-773,00", "773,00"]
+    assert values == ["-773.00", "773.00"]
 
 
 def test_international_venice_card_9690(transactions):
-    t = find(transactions, cartao="9690", data="20/01", descricao="VENICE.AI")
+    t = find(transactions, cartao="9690", data="2026-01-20", descricao="VENICE.AI")
     assert t.moeda == "USD"
-    assert t.valor == "18,00"
+    assert t.valor == "-18.00"
 
 
 def test_international_claude_card_9690(transactions):
-    """CLAUDE.AI was billed originally in BRL but charged via the international
-    flow — the USD equivalent (last number on the second line) is what counts."""
-    t = find(transactions, cartao="9690", data="22/01", descricao="CLAUDE.AI SUBSCRIPTION")
+    t = find(transactions, cartao="9690", data="2026-01-22", descricao="CLAUDE.AI SUBSCRIPTION")
     assert t.moeda == "USD"
-    assert t.valor == "20,70"
+    assert t.valor == "-20.70"
 
 
 def test_international_amda_card_1017(transactions):
-    t = find(transactions, cartao="1017", data="07/02", descricao="AMDA")
+    t = find(transactions, cartao="1017", data="2026-02-07", descricao="AMDA")
     assert t.moeda == "USD"
-    assert t.valor == "92,96"
+    assert t.valor == "-92.96"
 
 
 def test_no_transactions_from_ignored_sections(transactions):
