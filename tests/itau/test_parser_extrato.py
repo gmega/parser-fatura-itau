@@ -3,16 +3,16 @@ from pathlib import Path
 
 import pytest
 
-import extrato_ofx_parser
-from common import FONTE_EXTRATO, CSV_FIELDS, write_csv
+from itau import parser_extrato
+from itau.common import FONTE_EXTRATO, CSV_FIELDS, write_csv
 
 
-OFX = Path(__file__).parent.parent / "examples" / "extrato.ofx"
+OFX = Path(__file__).resolve().parents[2] / "examples" / "extrato.ofx"
 
 
 @pytest.fixture(scope="module")
 def transactions():
-    return list(extrato_ofx_parser.parse(OFX))
+    return list(parser_extrato.parse(OFX))
 
 
 def test_count_matches_stmttrn_blocks(transactions):
@@ -76,5 +76,5 @@ def test_csv_output_schema(transactions, tmp_path):
 
 
 def test_determinism(transactions):
-    again = list(extrato_ofx_parser.parse(OFX))
+    again = list(parser_extrato.parse(OFX))
     assert again == transactions

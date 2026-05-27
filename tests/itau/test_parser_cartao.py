@@ -3,16 +3,16 @@ from pathlib import Path
 
 import pytest
 
-import pdf_cartao_parser
-from common import FONTE_CARTAO, CSV_FIELDS, write_csv
+from itau import parser_cartao
+from itau.common import FONTE_CARTAO, CSV_FIELDS, write_csv
 
 
-FATURA_PDF = Path(__file__).parent.parent / "examples" / "fatura-02.pdf"
+FATURA_PDF = Path(__file__).resolve().parents[2] / "examples" / "fatura-02.pdf"
 
 
 @pytest.fixture(scope="module")
 def transactions():
-    return list(pdf_cartao_parser.parse(FATURA_PDF))
+    return list(parser_cartao.parse(FATURA_PDF))
 
 
 def find(transactions, *, cartao, data, descricao):
@@ -120,5 +120,5 @@ def test_csv_output_has_expected_header_and_first_row(transactions, tmp_path):
 
 
 def test_determinism(transactions):
-    again = list(pdf_cartao_parser.parse(FATURA_PDF))
+    again = list(parser_cartao.parse(FATURA_PDF))
     assert again == transactions

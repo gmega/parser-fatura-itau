@@ -15,7 +15,7 @@ from typing import Iterator
 
 import pdfplumber
 
-from common import FONTE_CARTAO, Transaction, write_csv
+from itau.common import FONTE_CARTAO, Transaction, write_csv
 
 
 # Geometry: tuned to fatura-02. The left column's rightmost content is

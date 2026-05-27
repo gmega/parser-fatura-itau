@@ -10,9 +10,8 @@ import argparse
 from pathlib import Path
 from typing import Iterable, Iterator
 
-import extrato_ofx_parser
-import pdf_cartao_parser
-from common import Transaction, write_csv
+from itau import parser_cartao, parser_extrato
+from itau.common import Transaction, write_csv
 
 
 def merge(
@@ -20,9 +19,9 @@ def merge(
     ofx_paths: Iterable[str | Path] = (),
 ) -> Iterator[Transaction]:
     for p in pdf_paths:
-        yield from pdf_cartao_parser.parse(p)
+        yield from parser_cartao.parse(p)
     for p in ofx_paths:
-        yield from extrato_ofx_parser.parse(p)
+        yield from parser_extrato.parse(p)
 
 
 def _main(argv: list[str] | None = None) -> None:

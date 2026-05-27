@@ -27,3 +27,26 @@ Use TDD (Test-Driven Development) para desenvolver o extrator. Crie testes que v
 
 Eu criei um ambiente conda para você usar, chamado extrator. Se precisar criar um shell, sempre ative o venv com `conda activate extrator`.
 
+## Extensões posteriores
+
+Além do extrator de fatura PDF descrito acima, o projeto foi estendido com:
+
+### Parser de extrato OFX
+
+Além da fatura do cartão, o projeto também faz parse de extratos bancários em formato OFX (ex.: `./examples/extrato.ofx`) — cada `<STMTTRN>` vira uma transação. Como o OFX traz menos informação que o PDF, `categoria` fica em branco e `cartão` é preenchido com `CC-<ACCTID>` extraído do próprio arquivo.
+
+### Schema unificado para análise
+
+Para permitir mesclar fatura + extrato e analisar despesas num único CSV, ambos os parsers emitem o mesmo schema canônico:
+
+- `data` em ISO `YYYY-MM-DD` (no PDF o ano é inferido pela `Emissão:` da fatura — `14/11` numa fatura de fev/2026 vira `2025-11-14`)
+- `valor` em formato ISO numérico (ponto decimal, sem separador de milhar), com sinal normalizado: **saídas são negativas, entradas positivas**
+- `moeda` em ISO 4217 (`BRL`, `USD`)
+- `fonte` é `cartão` ou `extrato`, preenchido pelo próprio parser
+
+### Estrutura do projeto
+
+- Pacote `itau/` contém `common.py` (TypedDict `Transaction` + helpers), `parser_cartao.py` e `parser_extrato.py`. Cada parser expõe `parse(path) -> Iterator[Transaction]`.
+- `cli.py` na raiz é o driver: aceita `--pdf` e `--ofx` repetidos e produz um CSV consolidado.
+- Os testes em `tests/` espelham essa estrutura: `tests/itau/` para os parsers, `tests/test_cli.py` para o driver.
+

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Iterator
 
-from common import FONTE_EXTRATO, Transaction, write_csv
+from itau.common import FONTE_EXTRATO, Transaction, write_csv
 
 
 # Itaú emits OFX 1.x (SGML) with the CHARSET:1252 header. Decode permissively.
