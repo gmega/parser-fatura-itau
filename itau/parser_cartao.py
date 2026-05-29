@@ -29,24 +29,32 @@ _MONEY = r"-?\s?\d{1,3}(?:\.\d{3})*,\d{2}"
 _DATE = r"\d{2}/\d{2}"
 
 _NATIONAL_LINE_RE = re.compile(rf"^({_DATE})\s+(.+?)\s+({_MONEY})$")
-_INTL_CONV_RE = re.compile(rf"^(.+?)\s+({_MONEY})\s+(USD|BRL|EUR)\s+({_MONEY})$")
-_CARD_HEADER_RE = re.compile(r"\(final (\d{4})\)")
-_NATIONAL_SUBTOTAL_RE = re.compile(r"^Lançamentos no cartão \(final (\d{4})\)")
-_DOLAR_CONV_RE = re.compile(r"^Dólar de Conversão")
+# First gap allows zero whitespace: in newer fatura PDFs the domain can abut
+# the value (e.g. "ANTHROPIC.COM110,00 BRL 22,20").
+_INTL_CONV_RE = re.compile(rf"^(.+?)\s*({_MONEY})\s+(USD|BRL|EUR)\s+({_MONEY})$")
+_CARD_HEADER_RE = re.compile(r"\(final\s*(\d{4})\)")
+_NATIONAL_SUBTOTAL_RE = re.compile(r"^Lançamentos\s*no\s*cartão\s*\(final\s*(\d{4})\)")
+_DOLAR_CONV_RE = re.compile(r"^Dólar\s*de\s*Conversão")
 _EMISSION_RE = re.compile(r"Emissão:\s*(\d{2})/(\d{2})/(\d{4})")
 
-_NATIONAL_SECTION = "Lançamentos: compras e saques"
-_INTERNATIONAL_SECTION = "Lançamentos internacionais"
+# Markers are matched after squashing whitespace on both sides because newer
+# fatura PDFs ship non-tabular text with no inter-word spaces.
+_NATIONAL_SECTION = "Lançamentos:comprasesaques"
+_INTERNATIONAL_SECTION = "Lançamentosinternacionais"
 
 _STOP_MARKERS = (
-    "Lançamentos: produtos e serviços",
-    "Compras parceladas - próximas faturas",
-    "Encargos cobrados nesta fatura",
-    "Simulação de Compras",
-    "Simulação Saque Cash",
-    "Demais Taxas de Juros",
-    "Limites de crédito",
+    "Lançamentos:produtoseserviços",
+    "Comprasparceladas-próximasfaturas",
+    "Encargoscobradosnestafatura",
+    "SimulaçãodeCompras",
+    "SimulaçãoSaqueCash",
+    "DemaisTaxasdeJuros",
+    "Limitesdecrédito",
 )
+
+
+def _squash(s: str) -> str:
+    return re.sub(r"\s+", "", s)
 
 
 def parse(path: str | Path) -> Iterator[Transaction]:
@@ -109,16 +117,17 @@ def _parse(lines: list[str], emission_year: int, emission_month: int) -> Iterato
 
     while i < n:
         line = lines[i].strip()
+        squashed = _squash(line)
 
-        if any(marker in line for marker in _STOP_MARKERS):
+        if any(marker in squashed for marker in _STOP_MARKERS):
             return
 
-        if _NATIONAL_SECTION in line:
+        if _NATIONAL_SECTION in squashed:
             section = "national"
             i += 1
             continue
 
-        if _INTERNATIONAL_SECTION in line:
+        if _INTERNATIONAL_SECTION in squashed:
             section = "international"
             i += 1
             continue
